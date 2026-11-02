@@ -1,0 +1,168 @@
+Bootstrap: docker
+From: nvcr.io/nvidia/pytorch:25.02-py3
+
+%labels
+    Description video-SALMONN-2+ eval environment with flash-attn for A100/RTX3090/RTX5000/L40S
+    Note Uses transformers 4.51.3 for video-SALMONN-2+ compatibility
+
+%environment
+    export TORCH_CUDA_ARCH_LIST="7.5;8.0;8.6;8.9"
+
+%post
+    # NGC 25.02 provides: CUDA 12.8, nvcc, cuDNN 9.7, NCCL 2.25, Python 3.12, Ubuntu 24.04 (glibc 2.39)
+    # Remove NGC's pre-installed PyTorch to avoid conflicts
+    pip uninstall -y torch torchvision torchaudio
+    rm -rf /usr/local/lib/python3.12/dist-packages/torch*
+    rm -rf /usr/local/lib/python3.12/dist-packages/torchvision*
+    rm -rf /usr/local/lib/python3.12/dist-packages/torchaudio*
+
+    # System dependencies
+    apt-get update && apt-get install -y \
+        ffmpeg libsm6 libxext6 libsndfile1 \
+        && rm -rf /var/lib/apt/lists/*
+
+    # Core ML - flash-attn build needs this torch version
+    pip install torch==2.9.0 torchvision==0.24.0 --index-url https://download.pytorch.org/whl/cu128
+
+    # transformers 4.51.3 (NOT 5.3.0) — required by video-SALMONN-2+ qwenvl module
+    # qwenvl/model/modeling_qwen2_5_vl.py imports SlidingWindowCache and other v4.5x APIs
+    # that were removed in transformers v5
+    pip install transformers==4.51.3
+
+    # huggingface_hub must be <1.0 for transformers 4.51.3 compat
+    pip install huggingface_hub==0.30.2
+
+    # tokenizers 0.21.0 (matches transformers 4.51.3, not 0.22.2 which needs transformers 5.x)
+    pip install tokenizers==0.21.0
+
+    # peft 0.15.2 (video-SALMONN-2+ pin; loads LoRA adapters with this version's API)
+    pip install peft==0.15.2
+
+    # liger_kernel — REQUIRED, qwenvl module imports it at module load time
+    pip install liger_kernel==0.5.10
+
+    # accelerate kept at original version — backward compat with video-SALMONN's 1.7.0 pin
+    pip install accelerate==1.13.0
+
+    # numpy stays at 1.x to match video-SALMONN-2+'s pin
+    # The qwenvl code was tested against numpy 1.24.4
+    pip install numpy==1.24.4
+
+    pip install safetensors==0.7.0
+    pip install timm==1.0.25
+    pip install einops==0.8.2
+    pip install triton==3.5.0
+
+    # Flash Attention
+    echo "torch==2.9.0" > /tmp/constraints.txt
+    echo "torchvision==0.24.0" >> /tmp/constraints.txt
+    export PIP_CONSTRAINT=/tmp/constraints.txt
+
+    export TORCH_CUDA_ARCH_LIST="7.5;8.0;8.6;8.9"
+    pip install flash-attn==2.8.3 --no-build-isolation --no-cache-dir
+
+    # NOT INSTALLED: deepspeed
+    # video-SALMONN-2+'s requirements.txt lists deepspeed==0.16.0 but we deliberately skip it.
+    # On GPU-less nodes it triggers triton init at import time and crashes.
+    # We're doing inference only, so deepspeed is unnecessary.
+
+    # Data / eval dependencies
+    pip install datasets==3.1.0
+    pip install evaluate==0.4.6
+    pip install sentencepiece==0.2.1
+    pip install tiktoken==0.12.0
+
+    # Video / image processing
+    pip install av==15.1.0
+    pip install decord==0.6.0
+    pip install opencv-python-headless==4.13.0.92
+    pip install pillow==11.3.0
+    pip install imageio==2.37.3
+    pip install imageio-ffmpeg==0.6.0
+    pip install moviepy==2.2.1
+    pip install qwen-vl-utils==0.0.14
+    pip install yt-dlp==2026.3.13
+
+    # Audio
+    pip install librosa==0.11.0
+    pip install soundfile==0.13.1
+    pip install audioread==3.1.0
+
+    # NLP tools
+    pip install nltk==3.9.3
+    pip install rouge==1.0.1
+    pip install sacrebleu==2.6.0
+    pip install spacy==3.8.11
+    pip install ftfy==6.3.1
+    pip install regex==2026.2.28
+
+    # Science / math
+    # NOTE: pinning numpy 1.24.4 above means some of these need older versions
+    # scipy/pandas/scikit-learn/numba downgraded to numpy-1.x-compatible versions
+    pip install scipy==1.13.1
+    pip install pandas==2.2.3
+    pip install scikit-learn==1.5.2
+    pip install numba==0.60.0
+    pip install matplotlib==3.10.8
+    pip install sympy==1.14.0
+
+    # Eval specific
+    pip install pycocoevalcap==1.2
+    pip install pycocotools==2.0.11
+    pip install anls==0.0.2
+    pip install editdistance==0.8.1
+    pip install Levenshtein==0.27.3
+    pip install math-verify==0.1.0
+    pip install capture-metric==0.1.13
+    pip install ir_datasets==0.5.11
+
+    # LLM APIs
+    pip install openai==2.28.0
+    pip install google-generativeai==0.8.6
+
+    # Langchain
+    pip install langchain==1.2.12
+    pip install langchain-community==0.4.1
+    pip install langgraph==1.1.2
+
+    # Misc utilities
+    pip install submitit==1.5.4
+    pip install loguru==0.7.3
+    pip install wandb==0.25.0
+    pip install beautifulsoup4==4.14.3
+    pip install lxml==6.0.2
+    pip install jsonlines==4.0.0
+    pip install openpyxl==3.1.5
+    pip install tabulate==0.10.0
+    pip install tqdm==4.67.3
+    pip install rich==14.3.3
+    pip install pydantic==2.12.5
+    pip install psutil==7.2.2
+    pip install hf_transfer==0.1.9
+    pip install pytablewriter
+
+    # NOT INSTALLED: sentence-transformers, FlagEmbedding
+    # These both need transformers >= 4.41 which 4.51.3 satisfies, BUT
+    # sentence-transformers 5.3.0 needs huggingface_hub >= 1.0 which we can't have.
+    # If you need them in this container, pin sentence-transformers==3.3.1 instead:
+    #   pip install sentence-transformers==3.3.1
+    # (omitting by default since video-SALMONN-2+ doesn't need them)
+
+    apt-get clean
+
+%test
+    python -c "import torch; print('PyTorch:', torch.__version__)"
+    python -c "import torch; print('CUDA available:', torch.cuda.is_available())"
+    python -c "import flash_attn; print('Flash Attention:', flash_attn.__version__)"
+    python -c "import decord; print('Decord:', decord.__version__)"
+    python -c "import transformers; print('Transformers:', transformers.__version__); assert transformers.__version__.startswith('4.51'), 'Wrong transformers version'"
+    python -c "import liger_kernel; print('Liger kernel: OK')"
+    python -c "from transformers.cache_utils import SlidingWindowCache; print('SlidingWindowCache: OK')"
+    python -c "import cv2; print('OpenCV:', cv2.__version__)"
+    python -c "import numpy; print('NumPy:', numpy.__version__); assert numpy.__version__.startswith('1.'), 'Wrong numpy version'"
+    python -c "import peft; print('PEFT:', peft.__version__)"
+    python -c "import accelerate; print('Accelerate:', accelerate.__version__)"
+    echo "All checks passed!"
+
+%runscript
+    exec python "$@"

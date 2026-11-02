@@ -1,0 +1,7 @@
+method: tokendrop
+max_frames: 128
+attn_implementation: eager
+drop_schedule:
+  29:
+    - instruction_prefix
+    - non_option_question

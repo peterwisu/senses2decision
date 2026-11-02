@@ -1,0 +1,5 @@
+# baseline.yaml
+method: null
+dataset: av_speakerbench_audiovisual
+max_frames: 128
+attn_implementation: eager

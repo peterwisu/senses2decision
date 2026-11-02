@@ -1,0 +1,10 @@
+method: tokendrop
+max_frames: 768
+attn_implementation: eager
+drop_schedule:
+  25:
+    - targets
+  29:
+    - question
+  31:
+    - query

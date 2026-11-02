@@ -1,0 +1,6 @@
+method: tokendrop
+max_frames: 128
+attn_implementation: eager
+drop_schedule:
+  26:
+    - audio_chunks
